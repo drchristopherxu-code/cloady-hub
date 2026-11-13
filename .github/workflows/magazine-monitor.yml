@@ -1,0 +1,29 @@
+name: magazine-weekend-monitor
+
+on:
+  schedule:
+    # Saturday 23:45 UTC = Sunday 07:45 Asia/Shanghai, after the 06:30 build window
+    - cron: '45 23 * * 6'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: check Pages repo freshness
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          MAGAZINE_REPO: ${{ secrets.MAGAZINE_REPO }}
+        run: |
+          echo "$GH_PAT" | gh auth login --with-token
+          LATEST=$(gh api "repos/$MAGAZINE_REPO/commits" --jq '.[0].commit.author.date')
+          echo "latest commit: $LATEST"
+          NOW=$(date -u +%s)
+          LATEST_EPOCH=$(date -u -d "$LATEST" +%s)
+          AGE=$((NOW - LATEST_EPOCH))
+          echo "age hours: $((AGE/3600))"
+          if [ "$AGE" -gt 180000 ]; then
+            echo "::error::Weekly magazine build may have failed (no Pages update in 50h)"
+            exit 1
+          fi
+          echo "OK: Pages updated recently ($((AGE/3600))h ago)"
