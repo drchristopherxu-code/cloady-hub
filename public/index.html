@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloady Starter</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 48px 20px;
+    background: #f7f8fa; color: #1c2024;
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  main { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.02em; }
+  .sub { color: #6b7280; margin: 0 0 28px; }
+  .card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 20px 22px; margin-bottom: 16px;
+  }
+  .status { display: flex; align-items: center; gap: 9px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #d1d5db; }
+  .dot.ok { background: #16a34a; }
+  .dot.bad { background: #dc2626; }
+  .meta { color: #6b7280; font-size: 13px; margin-top: 10px; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; margin: 0 0 12px; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { padding: 9px 0; border-top: 1px solid #f0f1f3; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  li:first-child { border-top: 0; }
+  code {
+    background: #f3f4f6; border-radius: 5px; padding: 2px 7px;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .verb { color: #7c3aed; font: 600 12px/1 ui-monospace, monospace; min-width: 42px; }
+  .desc { color: #6b7280; font-size: 13px; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  footer { color: #9ca3af; font-size: 12px; margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cloady Starter</h1>
+  <p class="sub">静态站 + API + Webhook 骨架，零依赖，跑在免费档里。</p>
+
+  <div class="card">
+    <div class="status"><span class="dot" id="dot"></span><span id="status">检查服务状态…</span></div>
+    <div class="meta" id="meta">正在请求 /api/health</div>
+  </div>
+
+  <div class="card">
+    <h2>面板与探针</h2>
+    <ul>
+      <li><span class="verb">GET</span><a href="/api/health"><code>/api/health</code></a><span class="desc">健康检查，供 GitHub Actions 保活</span></li>
+      <li><span class="verb">GET</span><code>/panel?key=…</code><span class="desc">只读面板：任务队列 + 产物档案（需 HUB_TOKEN）</span></li>
+      <li><span class="verb">GET</span><a href="/api/version"><code>/api/version</code></a><span class="desc">当前部署版本</span></li>
+      <li><span class="verb">GET</span><a href="/api/hello?name=workbuddy"><code>/api/hello</code></a><span class="desc">示例 API</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>公网入口 → Box 队列</h2>
+    <ul>
+      <li><span class="verb">POST</span><code>/api/task</code><span class="desc">提交任务（X-Hub-Token 鉴权）</span></li>
+      <li><span class="verb">POST</span><code>/api/webhook/github</code><span class="desc">GitHub Webhook，HMAC-SHA256 验签</span></li>
+      <li><span class="verb">POST</span><code>/api/webhook/bot</code><span class="desc">Bot 消息，Secret-Token 校验</span></li>
+      <li><span class="verb">POST</span><code>/api/tasks/claim</code><span class="desc">Box 主动拉取并认领任务</span></li>
+      <li><span class="verb">POST</span><code>/api/result</code><span class="desc">Box 回写执行结果</span></li>
+      <li><span class="verb">POST</span><code>/api/publish</code><span class="desc">Box 发布早报 / EB-5 / 杂志产物</span></li>
+    </ul>
+  </div>
+
+  <footer>部署在 Cloady · 免费档 0.5 vCPU / 1 GB / 5 GB · 状态在内存中，Box 每轮重发产物</footer>
+</main>
+<script>
+  fetch('/api/health')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('dot').className = 'dot ok';
+      document.getElementById('status').textContent = '服务运行中';
+      document.getElementById('meta').textContent =
+        '已运行 ' + d.uptimeSeconds + ' 秒 · 内存 ' + d.memoryMB + ' MB · 启动于 ' + d.startedAt;
+    })
+    .catch(e => {
+      document.getElementById('dot').className = 'dot bad';
+      document.getElementById('status').textContent = '健康检查失败';
+      document.getElementById('meta').textContent = String(e);
+    });
+</script>
+</body>
+</html>

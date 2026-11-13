@@ -1,0 +1,12 @@
+{
+  "name": "cloady-starter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Zero-dependency site + API + webhook starter sized for the Cloady free tier",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

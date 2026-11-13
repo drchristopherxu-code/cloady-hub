@@ -1,0 +1,101 @@
+name: deploy-verify
+
+# A git-sourced Cloady app has autoUpdate ON by default: every push to the
+# tracked branch rebuilds it on the platform side, with the Mac switched off.
+# This workflow does not duplicate that build. It:
+#   1. waits for the app to become healthy after the push,
+#   2. checks whether the running process actually started after the commit,
+#   3. only if not, falls back to an explicit `cloady redeploy`,
+#   4. runs a final smoke test on the public endpoints.
+# While the app is still upload-sourced (before migrate-to-git.sh), step 3 is
+# what keeps push -> rebuild working; code changes still need ./deploy.sh there.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.github/workflows/keepalive.yml'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      force_redeploy:
+        description: 'Force cloady redeploy even if autoUpdate already ran'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloady-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Wait for the app to be reachable
+        id: wait
+        env:
+          APP_URL: ${{ vars.APP_URL || secrets.APP_URL }}
+        run: |
+          set -u
+          URL="${APP_URL%/}/api/health"
+          code=000
+          for i in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/h.json -w '%{http_code}' --max-time 15 "$URL" 2>/dev/null || echo 000)
+            echo "attempt $i: $code"
+            [ "$code" = "200" ] && break
+            sleep 10
+          done
+          echo "http_code=$code" >> "$GITHUB_OUTPUT"
+          COMMIT_TS=$(git log -1 --format=%ct)
+          echo "commit_ts=$COMMIT_TS" >> "$GITHUB_OUTPUT"
+          STARTED=$(python3 - <<'PY'
+          import json, datetime
+          try:
+              d = json.load(open('/tmp/h.json'))
+              print(int(datetime.datetime.fromisoformat(d['startedAt'].replace('Z','+00:00')).timestamp()))
+          except Exception:
+              print(0)
+          PY
+          )
+          echo "started_ts=$STARTED" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT_TS started=$STARTED"
+
+      - name: Fallback redeploy when autoUpdate did not pick up the push
+        if: ${{ steps.wait.outputs.http_code != '200' || fromJSON(steps.wait.outputs.started_ts) < fromJSON(steps.wait.outputs.commit_ts) || inputs.force_redeploy }}
+        env:
+          CLOADY_TOKEN: ${{ secrets.CLOADY_TOKEN }}
+          CLOADY_WORKSPACE: ${{ vars.CLOADY_WORKSPACE }}
+        run: |
+          set -euo pipefail
+          npm install -g cloady >/dev/null 2>&1
+          WS="${CLOADY_WORKSPACE:-drchristopherxu-code}"
+          SLUG="$(cloady apps "$WS" --json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["slug"] if d else "")')"
+          echo "redeploy $WS / $SLUG"
+          [ -z "$SLUG" ] && { echo "::error::no app found"; exit 1; }
+          cloady redeploy "$WS" "$SLUG" --region eu1
+          sleep 30
+
+      - name: Smoke test
+        env:
+          APP_URL: ${{ vars.APP_URL || secrets.APP_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${APP_URL%/}"
+          for path in / /api/health /api/version /api/hello; do
+            code=$(curl -sS -o /tmp/out -w '%{http_code}' --max-time 20 "$BASE$path")
+            printf '%-16s %s\n' "$path" "$code"
+            [ "$code" = "200" ] || { cat /tmp/out; exit 1; }
+          done
+          echo "--- health ---"; cat /tmp/out

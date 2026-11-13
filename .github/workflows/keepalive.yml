@@ -1,0 +1,66 @@
+name: keepalive
+
+# Reliable clock for the Cloady free tier. A free app is paused after 7 days
+# with no requests. Box hibernates and the Mac may be off, so GitHub Actions
+# is the only dependable pinger here. 4 runs/day = ~120 Actions minutes/month.
+on:
+  schedule:
+    # every 6 hours, offset from the top of the hour to avoid the cron rush
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ping /api/health
+        id: ping
+        env:
+          APP_URL: ${{ vars.APP_URL || secrets.APP_URL }}
+        run: |
+          set -u
+          URL="${APP_URL%/}/api/health"
+          echo "GET $URL"
+          code=$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+                --max-time 25 --retry 2 --retry-delay 5 "$URL" || true)
+          echo "HTTP $code"
+          cat /tmp/health.json 2>/dev/null || true
+          echo "http_code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Self-heal if the app is paused or unhealthy
+        if: steps.ping.outputs.http_code != '200'
+        env:
+          CLOADY_TOKEN: ${{ secrets.CLOADY_TOKEN }}
+          CLOADY_WORKSPACE: ${{ vars.CLOADY_WORKSPACE }}
+          APP_URL: ${{ vars.APP_URL || secrets.APP_URL }}
+        run: |
+          set -euo pipefail
+          npm install -g cloady >/dev/null 2>&1
+          WS="${CLOADY_WORKSPACE:-drchristopherxu-code}"
+          SLUG="$(cloady apps "$WS" --json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["slug"] if d else "")')"
+          echo "workspace=$WS app=$SLUG"
+          if [ -z "$SLUG" ]; then echo "::error::no app found in $WS"; exit 1; fi
+          cloady start "$WS" "$SLUG" --region eu1 || cloady redeploy "$WS" "$SLUG" --region eu1
+          sleep 25
+          curl -sS -o /dev/null -w 'after self-heal: %{http_code}\n' "${APP_URL%/}/api/health" || true
+
+      - uses: actions/checkout@v4
+
+      # GitHub disables scheduled workflows after 60 days of repo inactivity.
+      # An empty commit every run keeps the repo "active". Pushes made with the
+      # default GITHUB_TOKEN do NOT trigger other workflows, so this cannot
+      # cause a deploy loop.
+      - name: Heartbeat commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: keepalive $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push

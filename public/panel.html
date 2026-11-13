@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hub 面板</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 16px 60px;
+    background: #f7f8fa; color: #1c2024;
+    font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.02em; }
+  .sub { color: #6b7280; margin: 0 0 20px; font-size: 13px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; margin: 0 0 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stat { flex: 1 1 110px; background: #f9fafb; border: 1px solid #eef0f3; border-radius: 9px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; line-height: 1.2; }
+  .stat span { color: #6b7280; font-size: 12px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #d1d5db; margin-right: 6px; }
+  .dot.ok { background: #16a34a; } .dot.bad { background: #dc2626; }
+  .item { border-top: 1px solid #f0f1f3; padding: 11px 0; }
+  .item:first-of-type { border-top: 0; }
+  .item .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .tag { font: 600 11px/1.5 ui-monospace, Menlo, monospace; padding: 2px 7px; border-radius: 5px; background: #eef2ff; color: #4338ca; }
+  .tag.pending { background: #fef3c7; color: #92400e; }
+  .tag.claimed { background: #dbeafe; color: #1e40af; }
+  .tag.done { background: #dcfce7; color: #166534; }
+  .tag.failed { background: #fee2e2; color: #991b1b; }
+  .mono { font: 12px/1.55 ui-monospace, Menlo, monospace; color: #4b5563; word-break: break-all; }
+  .time { color: #9ca3af; font-size: 12px; margin-left: auto; }
+  pre { background: #f9fafb; border: 1px solid #eef0f3; border-radius: 8px; padding: 10px 12px; margin: 8px 0 0;
+        white-space: pre-wrap; word-break: break-word; font: 12px/1.6 ui-monospace, Menlo, monospace; max-height: 240px; overflow: auto; }
+  img.art { max-width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 8px; display: block; }
+  a { color: #2563eb; text-decoration: none; } a:hover { text-decoration: underline; }
+  input, textarea, select, button {
+    font: inherit; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; background: #fff; color: #1c2024;
+  }
+  input[type=text] { flex: 1 1 160px; min-width: 0; }
+  textarea { width: 100%; min-height: 62px; resize: vertical; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+  button { background: #1c2024; color: #fff; border-color: #1c2024; cursor: pointer; padding: 8px 16px; }
+  button:hover { opacity: .85; }
+  .hint { color: #9ca3af; font-size: 12px; margin-top: 8px; }
+  .err { color: #b91c1c; font-size: 13px; }
+  .empty { color: #9ca3af; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Hub 面板</h1>
+      <p class="sub">Cloady 公网入口 · Box 拉取执行 · 只读视图</p>
+    </div>
+    <span id="live"><span class="dot"></span>连接中…</span>
+  </header>
+
+  <div class="card">
+    <h2>运行状态</h2>
+    <div class="row" id="stats"></div>
+    <div class="hint" id="meta">—</div>
+  </div>
+
+  <div class="card">
+    <h2>提交任务（会进入 Box 队列）</h2>
+    <div class="row" style="margin-bottom:8px">
+      <select id="type">
+        <option value="echo">echo · 回显测试</option>
+        <option value="fetch">fetch · 抓取网页</option>
+        <option value="screenshot">screenshot · Playwright 截图</option>
+        <option value="republish">republish · 重发本地产物</option>
+      </select>
+      <input type="text" id="payload" placeholder='{"url":"https://example.com"}' value='{"url":"https://example.com"}'>
+      <button id="send">提交</button>
+    </div>
+    <div class="hint" id="sendResult">type 填 fetch / screenshot 时，payload 里需带 url。</div>
+  </div>
+
+  <div class="card">
+    <h2>任务队列</h2>
+    <div id="tasks"><div class="empty">加载中…</div></div>
+  </div>
+
+  <div class="card">
+    <h2>产物档案</h2>
+    <div id="artifacts"><div class="empty">加载中…</div></div>
+  </div>
+
+  <div class="hint" style="text-align:center">
+    每 20 秒自动刷新 · <a href="/">返回首页</a> · 数据在内存中，Box 每轮会重发产物
+  </div>
+</main>
+
+<script>
+  const KEY = new URLSearchParams(location.search).get('key') || '';
+  const H = { 'X-Hub-Token': KEY };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const short = (s) => { const t = new Date(s); return isNaN(t) ? esc(s) : t.toLocaleString('zh-CN', {hour12:false}); };
+
+  function stat(n, label) { return '<div class="stat"><b>' + n + '</b><span>' + label + '</span></div>'; }
+
+  function renderTasks(list) {
+    const el = document.getElementById('tasks');
+    if (!list.length) { el.innerHTML = '<div class="empty">暂无任务</div>'; return; }
+    el.innerHTML = list.map(t => {
+      let extra = '';
+      if (t.result) extra += '<pre>' + esc(typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)) + '</pre>';
+      if (t.error) extra += '<pre class="err">' + esc(t.error) + '</pre>';
+      if (t.issue && t.issue.url) extra += '<div class="hint"><a target="_blank" href="' + esc(t.issue.url) + '">GitHub Issue #' + esc(t.issue.number) + '</a></div>';
+      return '<div class="item"><div class="top">' +
+        '<span class="tag ' + esc(t.status) + '">' + esc(t.status) + '</span>' +
+        '<span class="tag">' + esc(t.type) + '</span>' +
+        '<span class="mono">' + esc(t.id) + '</span>' +
+        '<span class="time">' + short(t.createdAt) + '</span></div>' +
+        '<div class="mono">来源 ' + esc(t.source) + (t.claimedBy ? ' · 执行 ' + esc(t.claimedBy) : '') + '</div>' +
+        extra + '</div>';
+    }).join('');
+  }
+
+  function renderArtifacts(list) {
+    const el = document.getElementById('artifacts');
+    if (!list.length) { el.innerHTML = '<div class="empty">暂无产物（等 Box 发布）</div>'; return; }
+    el.innerHTML = list.map(a => {
+      let body = '';
+      if (a.contentType.indexOf('image/') === 0 && a.hasRaw)
+        body = '<img class="art" loading="lazy" src="/api/artifact/' + encodeURIComponent(a.id) + '/raw?key=' + encodeURIComponent(KEY) + '">';
+      else if (a.preview) body = '<pre>' + esc(a.preview) + '</pre>';
+      const link = a.url ? ' · <a target="_blank" href="' + esc(a.url) + '">打开原链</a>' : '';
+      return '<div class="item"><div class="top">' +
+        '<span class="tag">' + esc(a.kind) + '</span><b>' + esc(a.title) + '</b>' +
+        '<span class="time">' + short(a.updatedAt) + '</span></div>' +
+        '<div class="mono">' + esc(a.id) + ' · ' + a.size + ' B' + link + '</div>' + body + '</div>';
+    }).join('');
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch('/api/panel', { headers: H, cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 401 ? ' · 缺少或错误的 key' : ''));
+      const d = await r.json();
+      const h = d.health;
+      document.getElementById('live').innerHTML = '<span class="dot ok"></span>在线';
+      document.getElementById('stats').innerHTML =
+        stat(h.uptimeSeconds + 's', '运行时长') + stat(h.memoryMB + ' MB', '常驻内存') +
+        stat(h.tasks.pending, '待处理') + stat(h.tasks.claimed, '执行中') + stat(h.tasks.total, '任务总数') + stat(h.artifacts, '产物数');
+      document.getElementById('meta').textContent =
+        '启动于 ' + h.startedAt + ' · GitHub Webhook ' + (h.config.githubWebhook ? '已验签' : '未配置') +
+        ' · Issue 镜像 ' + (h.config.githubIssueMirror ? '已启用' : '未启用');
+      renderTasks(d.tasks);
+      renderArtifacts(d.artifacts);
+    } catch (e) {
+      document.getElementById('live').innerHTML = '<span class="dot bad"></span>离线';
+      document.getElementById('tasks').innerHTML = '<div class="err">' + esc(e.message) + '</div>';
+    }
+  }
+
+  document.getElementById('send').addEventListener('click', async () => {
+    let payload;
+    try { payload = JSON.parse(document.getElementById('payload').value || '{}'); }
+    catch (e) { document.getElementById('sendResult').textContent = 'payload 不是合法 JSON: ' + e.message; return; }
+    const type = document.getElementById('type').value;
+    try {
+      const r = await fetch('/api/task', { method: 'POST', headers: {...H, 'Content-Type': 'application/json'},
+        body: JSON.stringify({ type, payload, source: 'panel' }) });
+      const d = await r.json();
+      document.getElementById('sendResult').textContent = r.ok ? ('已入队 ' + d.task.id) : ('失败: ' + d.error);
+      if (r.ok) setTimeout(refresh, 800);
+    } catch (e) { document.getElementById('sendResult').textContent = '请求失败: ' + e.message; }
+  });
+
+  refresh();
+  setInterval(refresh, 20000);
+</script>
+</body>
+</html>

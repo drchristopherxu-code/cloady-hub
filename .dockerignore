@@ -1,0 +1,11 @@
+.git
+.github
+node_modules
+box
+deploy.sh
+migrate-to-git.sh
+gh-setup.sh
+.dockerignore
+.gitignore
+.DS_Store
+*.log
