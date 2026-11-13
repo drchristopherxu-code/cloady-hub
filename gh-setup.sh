@@ -45,7 +45,11 @@ echo "-> setting Actions secrets + variables"
 gh secret set CLOADY_TOKEN            --body "$CL_TOKEN"                   --repo "$OWNER/$REPO"
 gh secret set APP_URL                 --body "$APP_URL"                    --repo "$OWNER/$REPO"
 gh secret set HUB_TOKEN               --body "$(getvar HUB_TOKEN)"         --repo "$OWNER/$REPO"
-gh secret set GITHUB_WEBHOOK_SECRET  --body "$(getvar GITHUB_WEBHOOK_SECRET)" --repo "$OWNER/$REPO"
+# NOTE: GITHUB_WEBHOOK_SECRET is intentionally NOT a GitHub Actions secret.
+# GitHub forbids secret names starting with GITHUB_, and it is only consumed by
+# the Cloady app itself (server.js verifies webhook signatures against it), where
+# deploy.sh already injects it as an app env var. The webhook registration below
+# embeds the same value from hub.env into the hook config.
 gh secret set BOT_SECRET              --body "$(getvar BOT_SECRET)"        --repo "$OWNER/$REPO"
 gh variable set APP_URL               --body "$APP_URL"                    --repo "$OWNER/$REPO"
 gh variable set CLOADY_WORKSPACE      --body "$WS"                         --repo "$OWNER/$REPO"
